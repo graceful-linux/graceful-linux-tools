@@ -1,0 +1,44 @@
+# 配置环境
+export LANG="C"
+export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-"$(date +%s)"}"
+
+
+# 默认配置
+ARCH=$(uname -m)
+APP_NAME="GracefulLinux"
+GPG_KEY="dingjing@live.cn"
+PACMAN_CONF="/etc/pacman.conf"
+ROOTFS_IMAGE_TYPE="squashfs"
+ISO_VERSION="0.0.1"                             # 版本号
+ISO_NAME="graceful-linux"                       # 镜像名
+ISO_LABEL="${APP_NAME}"                         #
+ISO_PUBLISHER="${APP_NAME}"                     #
+ISO_APPLICATION="${APP_NAME} ISO"               #
+ISO_NAME="${ISO_NAME}-${ISO_VERSION}.iso"       # 镜像名(全名)
+
+
+# 路径
+WORK_DIR="${DIR_BASE}/work"                     # 工作根目录
+ISO_TEMP_DIR="${WORK_DIR}/iso/tmp"              #
+ISO_DIR="${WORK_DIR}/iso/iso"
+ROOTFS_DIR="${WORK_DIR}/rootfs"                 # 文件系统根目录
+
+PROFILE=""
+RUN_CMD=""
+BOOT_MODES=()
+
+
+ROOTFS_IMAGE_TOOL_OPTIONS=('-comp' 'xz')
+
+# 镜像中的软件包
+PKG_LIST=( \
+alsa-utils \
+base \
+linux \
+mkinitcpio \
+mkinitcpio-archiso \
+openssh \
+syslinux \
+# 图形包
+gnome
+)
