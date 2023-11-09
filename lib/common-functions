@@ -9,9 +9,9 @@ function _chroot_run()
 function _mount_rootfs()
 {
     trap "_umount_airootfs" EXIT HUB INT TERM
-    _msg_info "install -d -m 0755 -- ${WORK_DIR}/mnt/airootfs"
+    msg_info "install -d -m 0755 -- ${WORK_DIR}/mnt/airootfs"
     install -d -m 0755 -- "${WORK_DIR}/mnt/airootfs"
-    _msg_info "mount -- ${ROOTFS_DIR}.img ${WORK_DIR}/mnt/airootfs"
+    msg_info "mount -- ${ROOTFS_DIR}.img ${WORK_DIR}/mnt/airootfs"
     mount -- "${ROOTFS_DIR}.img" "${WORK_DIR}/mnt/airootfs"
 }
 
@@ -20,99 +20,88 @@ function _mount_rootfs()
 function _make_rootfs_create_image()
 {
     if (( $# < 1 )); then
-        _msg_error "函数 '${FUNCNAME[0]}' 至少需要一个参数" 1
+        msg_error "函数 '${FUNCNAME[0]}' 至少需要一个参数" 1
     fi
 
-    imagePath="${ISO_TEMP_DIR}/${ARCH}/airootfs.sfs"
+    imagePath="${ISO_DIR}/${APP_NAME}/${ARCH}/airootfs.sfs"
     if [[ "${ROOTFS_IMAGE_TYPE}" =~ .*squashfs ]] ; then
-        _msg_info "mksquashfs $@ ${imagePath} -noappend ${ROOTFS_IMAGE_TOOL_OPTIONS[@]}"
+        msg_info "mksquashfs $@ ${imagePath} -noappend ${ROOTFS_IMAGE_TOOL_OPTIONS[@]}"
         mksquashfs "$@" "${imagePath}" -noappend "${ROOTFS_IMAGE_TOOL_OPTIONS[@]}"
     else
-        _msg_error "不支持的镜像类型: '${ROOTFS_IMAGE_TYPE}'" 1
+        msg_error "不支持的镜像类型: '${ROOTFS_IMAGE_TYPE}'" 1
     fi
 }
 
 # 从源目录在SquashFS中创建ext4文件系统
-_make_rootfs_img()
+function _make_rootfs_img()
 {
     if [[ ! -e "${ROOTFS_DIR}" ]]; then
-        _msg_error "'${ROOTFS_DIR}' 路径不存在" 1
+        msg_error "'${ROOTFS_DIR}' 路径不存在" 1
     fi
 
-    _msg_info "开始创建一个 32GB 的 ext4 镜像 ..."
-    _msg_info "mkfs.ext4 -O '^has_journal,^resize_inode' -E 'lazy_itable_init=0' -m 0 -F -- ${ROOTFS_DIR}.img 32G"
+    msg_info "开始创建一个 32GB 的 ext4 镜像 ..."
+    msg_info "mkfs.ext4 -O '^has_journal,^resize_inode' -E 'lazy_itable_init=0' -m 0 -F -- ${ROOTFS_DIR}.img 32G"
     mkfs.ext4 -O '^has_journal,^resize_inode' -E 'lazy_itable_init=0' -m 0 -F -- "${ROOTFS_DIR}.img" 32G
 
-    _msg_info "tune2fs -c 0 -i 0 -- ${ROOTFS_DIR}.img > /dev/null"
+    msg_info "tune2fs -c 0 -i 0 -- ${ROOTFS_DIR}.img > /dev/null"
     tune2fs -c 0 -i 0 -- "${ROOTFS_DIR}.img" > /dev/null
 
     _mount_rootfs
-    _msg_info "正在复制 '${ROOTFS_DIR}/' 到 '${WORK_DIR}/mnt/airootfs/'..."
-    _msg_info "cp -aT -- ${ROOTFS_DIR}/  ${WORK_DIR}/mnt/airootfs/"
+    msg_info "正在复制 '${ROOTFS_DIR}/' 到 '${WORK_DIR}/mnt/airootfs/'..."
+    msg_info "cp -aT -- ${ROOTFS_DIR}/  ${WORK_DIR}/mnt/airootfs/"
     cp -aT -- "${ROOTFS_DIR}/" "${WORK_DIR}/mnt/airootfs/"
-    _msg_info "chown -- 0:0  ${WORK_DIR}/mnt/airootfs/"
+    msg_info "chown -- 0:0  ${WORK_DIR}/mnt/airootfs/"
     chown -- 0:0 "${WORK_DIR}/mnt/airootfs/"
     _umount_rootfs
 
     install -d -m 0755 -- "${WORK_DIR}/${INSTALL_DIR}/${ARCH}"
-    _msg_info "正在创建 SquashFS 镜像, 可能需要花点时间 ..."
+    msg_info "正在创建 SquashFS 镜像, 可能需要花点时间 ..."
     _make_rootfs_create_image "${ROOTFS_DIR}"
 
-    _msg_info "rm -- ${ROOTFS_DIR}.img"
+    msg_info "rm -- ${ROOTFS_DIR}.img"
     rm -- "${ROOTFS_DIR}.img"
 }
-
-
 
 function _make_rootfs_sfs()
 {
     if [[ ! -e "${ROOTFS_DIR}" ]]; then
-        _msg_error "'${ROOTFS_DIR}' 路径不存在" 1
+        msg_error "'${ROOTFS_DIR}' 路径不存在" 1
     fi
 
-    install -d -m 0755 -- "${ISO_TEMP_DIR}/${ARCH}"
-    _msg_info "正在创建 SquashFS 镜像, 这可能需要花点时间 ..."
+    install -d -m 0755 -- "${ISO_DIR}/${APP_NAME}/${ARCH}"
+    msg_info "正在创建 SquashFS 镜像, 这可能需要花点时间 ..."
     _make_rootfs_create_image "${ROOTFS_DIR}"
 }
 
 function _mkchecksum()
 {
-    cd -- "${ISO_TEMP_DIR}/${ARCH}"
-    chmod 0777 "${ISO_TEMP_DIR}/${ARCH}"
-    _msg_info "sha512sum airootfs.sfs > airootfs.sha512"
+    cd -- "${ISO_DIR}/${APP_NAME}/${ARCH}"
+    chmod 0777 "${ISO_DIR}/${APP_NAME}/${ARCH}"
+    msg_info "sha512sum airootfs.sfs > airootfs.sha512"
     sha512sum airootfs.sfs > airootfs.sha512
     cd -- "${OLDPWD}"
 }
 
 function _mksignature()
 {
-    _msg_info "开始给 SquashFS 镜像签名 ..."
-    _msg_info "cd -- ${ISO_TEMP_DIR}/${ARCH}"
-    cd -- "${ISO_TEMP_DIR}/${ARCH}"
+    msg_info "开始给 SquashFS 镜像签名 ..."
+    msg_info "cd -- ${ISO_DIR}/${APP_NAME}/${ARCH}"
+    cd -- "${ISO_DIR}/${APP_NAME}/${ARCH}"
     sudo -u ${SUDO_USER} gpg --detach-sign --default-key "${GPG_KEY}" airootfs.sfs
     cd -- "${OLDPWD}"
 }
 
 function _pacman()
 {
-    _msg_info "正在安裝軟件包到 '${ROOTFS_DIR}/' ..."
+    msg_info "正在安裝軟件包到 '${ROOTFS_DIR}/' ..."
     pacstrap -C "${WORK_DIR}/pacman.conf" -c -G -M -- "${ROOTFS_DIR}" "$@"
-    _msg_info "所有軟件包安裝完成!!!"
+    msg_info "所有軟件包安裝完成!!!"
 }
 
 function check_is_root()
 {
     if (( EUID != 0 )); then
-        _msg_error "必须以 root 运行." 1
-    fi
-}
-
-function run_once()
-{
-    if [[ ! -e "${WORK_DIR}/build.${1}" ]]; then
-        "$1"
-        _msg_info "执行 '$1'"
-        touch "${WORK_DIR}/build.${1}"
+        msg_error "必须以 root 运行." 1
     fi
 }
 
@@ -121,21 +110,21 @@ function show_config
 {
     local BUILD_DATE
     BUILD_DATE="$(date --utc --iso-8601=seconds -d "@${SOURCE_DATE_EPOCH}")"
-    _msg_info_pure "${APP_NAME} 配置值如下："
-    _msg_info_pure "             架构:       ${ARCH}"
-    _msg_info_pure "         工作目录:       ${WORK_DIR}"
-#    _msg_info_pure "         安装目录:       ${INSTALL_DIR}"
-    _msg_info_pure "         构建时间:       ${BUILD_DATE}"
-#    _msg_info_pure "       输出文件夹:       ${OUT_DIR}"
-    _msg_info_pure "         GPG 指纹:       ${GPG_KEY:-None}"
-    _msg_info_pure "         配置文件:       ${PROFILE}"
-    _msg_info_pure "  pacman 配置文件:       ${PACMAN_CONF}"
-    _msg_info_pure "       镜像文件名:       ${ISO_NAME}"
-    _msg_info_pure "       ISO 卷标签:       ${ISO_LABEL}"
-    _msg_info_pure "       ISO 出版者:       ${ISO_PUBLISHER}"
-    _msg_info_pure "         ISO 名字:       ${ISO_APPLICATION}"
-    _msg_info_pure "         引导模式:       ${BOOT_MODULES[*]}"
-    _msg_info_pure "       要安裝的包:       ${PKG_LIST[*]}"
+    msg_info_pure "${APP_NAME} 配置值如下："
+    msg_info_pure "             架构:       ${ARCH}"
+    msg_info_pure "         工作目录:       ${WORK_DIR}"
+#    msg_info_pure "         安装目录:       ${INSTALL_DIR}"
+    msg_info_pure "         构建时间:       ${BUILD_DATE}"
+#    msg_info_pure "       输出文件夹:       ${OUT_DIR}"
+    msg_info_pure "         GPG 指纹:       ${GPG_KEY:-None}"
+    msg_info_pure "         配置文件:       ${PROFILE}"
+    msg_info_pure "  pacman 配置文件:       ${PACMAN_CONF}"
+    msg_info_pure "       镜像文件名:       ${ISO_NAME}"
+    msg_info_pure "       ISO 卷标签:       ${ISO_LABEL}"
+    msg_info_pure "       ISO 出版者:       ${ISO_PUBLISHER}"
+    msg_info_pure "         ISO 名字:       ${ISO_APPLICATION}"
+    msg_info_pure "         引导模式:       ${BOOT_MODULES[*]}"
+    msg_info_pure "       要安裝的包:       ${PKG_LIST[*]}"
 }
 
 function make_pacman_conf()
@@ -144,7 +133,7 @@ function make_pacman_conf()
     SYS_CACHE_DIR="$(pacman-conf CacheDir| tr '\n' ' ')"
     PROFILE_CACHE_DIR="$(pacman-conf --config "${PACMAN_CONF}" CacheDir| tr '\n' ' ')"
 
-   [[ ! -d "${WORK_DIR}" ]] && mkdir --mode=777 -p "${WORK_DIR}"
+    install --mode=0777 -d "${WORK_DIR}"
    
     # 设置缓存目录
    if [[ "${PROFILE_CACHE_DIR}" != "/var/cache/pacman/pkg" ]] && \
@@ -228,7 +217,7 @@ function make_customize_rootfs()
    
     if [[ -e "${ROOTFS_DIR}/root/customize-gracefullinux.sh" ]]; then
         local RUN_CMD="/root/customize-gracefullinux.sh"
-        _chroot_run
+        chroot_run
         rm -- "${ROOTFS_DIR}/root/customize-gracefullinux.sh"
     fi
 }
@@ -243,10 +232,10 @@ function make_boot_modes()
 {
     local bootmode
     for bootmode in "${BOOT_MODES[@]}"; do
-        if typeset -f "_make_boot_${bootmode}" &> /dev/null; then
-            run_once "_make_boot_${bootmode}"
+        if typeset -f "make_boot_${bootmode}" &> /dev/null; then
+            run_once "make_boot_${bootmode}"
         else
-            _msg_error "无效的 boot 模式: ${bootmode}" 1
+            msg_error "无效的 boot 模式: ${bootmode}" 1
         fi
     done
 }
@@ -297,7 +286,7 @@ function make_prepare()
     elif [[ "${ROOTFS_IMAGE_TYPE}" == "ext4+squashfs" ]]; then          # prepare airootfs.sfs for dm-snapshot usage
         run_once _make_rootfs_img
     else
-        _msg_error "不支持的镜像类型: '${ROOTFS_IMAGE_TYPE}'" 1
+        msg_error "不支持的镜像类型: '${ROOTFS_IMAGE_TYPE}'" 1
     fi
     
     _mkchecksum
@@ -312,124 +301,28 @@ function make_iso()
 {
     local xorrisofs_options=()
 
-    # xorrisofs options for x86 BIOS booting using SYSLINUX
-    # shellcheck disable=SC2076
-    if [[ " ${BOOT_MODES[*]} " =~ ' bios.syslinux.' ]]; then
-        # SYSLINUX El Torito
-        if [[ " ${BOOT_MODES[*]} " =~ ' bios.syslinux.eltorito ' ]]; then
-            if [[ ! -f "${DIR_CONF}/isolinux/isolinux.bin" ]]; then
-                _msg_error "'${DIR_CONF}/isolinux/isolinux.bin' 文件不存在." 1
-            fi
-   
-            # SYSLINUX MBR
-            if [[ " ${BOOT_MODES[*]} " =~ ' bios.syslinux.mbr ' ]]; then
-                if [[ ! -f "${DIR_CONF}/isolinux/isohdpfx.bin" ]]; then
-                    _msg_error "'${DIR_CONF}/isolinux/isohdpfx.bin' 文件不存在." 1
-                fi
+    for bootmode in "${bootmodes[@]}"; do
+        typeset -f "_add_xorrisofs_options_${bootmode}" &>/dev/null && "_add_xorrisofs_options_${bootmode}"
+    done
 
-                xorrisofs_options+=(
-                    # SYSLINUX MBR bootstrap code; does not work without "-eltorito-boot isolinux/isolinux.bin"
-                    '-isohybrid-mbr' "${DIR_CONF}/isolinux/isohdpfx.bin"
-                    # When GPT is used, create an additional partition in the MBR (besides 0xEE) for sectors 0–1 (MBR
-                    # bootstrap code area) and mark it as bootable
-                    # This violates the UEFI specification, but may allow booting on some systems
-                    # https://wiki.archlinux.org/index.php/Partitioning#Tricking_old_BIOS_into_booting_from_GPT
-                    '--mbr-force-bootable'
-                    # Set the ISO 9660 partition's type to "Linux filesystem data"
-                    # When only MBR is present, the partition type ID will be 0x83 "Linux" as xorriso translates all
-                    # GPT partition type GUIDs except for the ESP GUID to MBR type ID 0x83
-                    '-iso_mbr_part_type' '0FC63DAF-8483-4772-8E79-3D69D8477DE4'
-                    # Move the first partition away from the start of the ISO to match the expectations of partition
-                    # editors
-                    # May allow booting on some systems
-                    # https://dev.lovelyhq.com/libburnia/libisoburn/src/branch/master/doc/partition_offset.wiki
-                    '-partition_offset' '16'
-                )
-            fi
-   
-            xorrisofs_options+=(
-                # El Torito boot image for x86 BIOS
-                '-eltorito-boot' 'isolinux/isolinux.bin'
-                # El Torito boot catalog file
-                '-eltorito-catalog' 'isolinux/boot.cat'
-                # Required options to boot with ISOLINUX
-                '-no-emul-boot' '-boot-load-size' '4' '-boot-info-table'
-            )
-        else
-            _msg_error "'bios.syslinux.eltorito' 引导模式不支持,正在使用 'bios.syslinux.mbr' 引导模式." 1
-        fi
-    fi
-
-    # xorrisofs options for X64 UEFI booting using systemd-boot
-    # shellcheck disable=SC2076
-    if [[ " ${BOOT_MODES[*]} " =~ ' uefi-x64.systemd-boot.' ]]; then
-        if [[ ! -f "${DIR_CONF}/efiboot.img" ]]; then
-            _msg_error "'${DIR_CONF}/efiboot.img' 文件不存在." 1
-        fi
-
-        [[ -e "${isofs_dir}/EFI/archiso" ]] && rm -rf -- "${isofs_dir}/EFI/archiso"
-   
-        # systemd-boot in an attached EFI system partition
-        if [[ " ${BOOT_MODES[*]} " =~ ' uefi-x64.systemd-boot.esp ' ]]; then
-            # Move the first partition away from the start of the ISO, otherwise the GPT will not be valid and ISO 9660
-            # partition will not be mountable
-            [[ " ${xorrisofs_options[*]} " =~ ' -partition_offset ' ]] || xorrisofs_options+=('-partition_offset' '16')
-            xorrisofs_options+=(
-                # Attach efiboot.img as a second partition and set its partition type to "EFI system partition"
-                '-append_partition' '2' 'C12A7328-F81F-11D2-BA4B-00A0C93EC93B' "${work_dir}/efiboot.img"
-                # Ensure GPT is used as some systems do not support UEFI booting without it
-                '-appended_part_as_gpt'
-            )
-
-            # systemd-boot in an attached EFI system partition via El Torito
-            if [[ " ${BOOT_MODES[*]} " =~ ' uefi-x64.systemd-boot.eltorito ' ]]; then
-                xorrisofs_options+=(
-                    # Start a new El Torito boot entry for UEFI
-                    '-eltorito-alt-boot'
-                    # Set the second partition as the El Torito UEFI boot image
-                    '-e' '--interval:appended_partition_2:all::'
-                    # Boot image is not emulating floppy or hard disk; required for all known boot loaders
-                    '-no-emul-boot'
-                )
-            fi
-
-        # systemd-boot in an embedded efiboot.img via El Torito
-        elif [[ " ${BOOT_MODES[*]} " =~ ' uefi-x64.systemd-boot.eltorito ' ]]; then
-            # The ISO will not contain a GPT partition table, so to be able to reference efiboot.img, place it as a
-            # file inside the ISO 9660 file system
-            install -d -m 0755 -- "${isofs_dir}/EFI/archiso"
-            cp -a -- "${work_dir}/efiboot.img" "${isofs_dir}/EFI/archiso/efiboot.img"
-   
-            xorrisofs_options+=(
-                # Start a new El Torito boot entry for UEFI
-                '-eltorito-alt-boot'
-                # Set efiboot.img as the El Torito UEFI boot image
-                '-e' 'EFI/archiso/efiboot.img'
-                # Boot image is not emulating floppy or hard disk; required for all known boot loaders
-                '-no-emul-boot'
-            )
-        fi
-
-        # Specify where to save the El Torito boot catalog file in case it is not already set by bios.syslinux.eltorito
-        [[ " ${bootmodes[*]} " =~ ' bios.' ]] || xorrisofs_options+=('-eltorito-catalog' 'EFI/boot.cat')
-    fi
-
-    _msg_info "开始创建 ISO 镜像 ..."
-    xorriso -as mkisofs                         \
-        -iso-level 3                            \
-        -full-iso9660-filenames                 \
-        -joliet                                 \
-        -joliet-long                            \
-        -rational-rock                          \
-        -volid ${ISO_LABEL}                     \
-        -appid ${ISO_APPLICATION}               \
-        -publisher ${ISO_PUBLISHER}             \
-        -preparer 准备 ${APP_NAME}              \
-        ${xorrisofs_options[@]}                 \
-        -output "${WORK_DIR}/${ISO_NAME}"       \
+    msg_info "开始创建 ISO 镜像 ..."
+    rm -f "${WORK_DIR}/${ISO_NAME_FULL}"
+    xorriso -as mkisofs \
+        -v \
+        -iso-level 3 \
+        -full-iso9660-filenames \
+        -joliet \
+        -joliet-long \
+        -rational-rock \
+        -volid "${ISO_LABEL}" \
+        -appid "${ISO_APPLICATION}" \
+        -publisher "${ISO_PUBLISHER}" \
+        -preparer "${APP_NAME}" \
+        "${xorrisofs_options[@]}" \
+        -output "${WORK_DIR}/${ISO_NAME_FULL}" \
         ${ISO_DIR}
-
-    du -h -- "${WORK_DIR}/${ISO_NAME}"
+    msg_info "完成!"
+    du -h -- "${WORK_DIR}/${ISO_NAME_FULL}"
 }
 
 

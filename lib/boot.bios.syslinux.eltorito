@@ -1,0 +1,15 @@
+#!/bin/bash
+
+function add_xorrisofs_options_bios.syslinux.eltorito() 
+{
+    xorrisofs_options+=(
+        # El Torito boot image for x86 BIOS
+        '-eltorito-boot' 'boot/syslinux/isolinux.bin'
+        # El Torito boot catalog file
+        '-eltorito-catalog' 'boot/syslinux/boot.cat'
+        # Required options to boot with ISOLINUX
+        '-no-emul-boot' '-boot-load-size' '4' '-boot-info-table'
+    )
+}
+
+

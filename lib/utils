@@ -1,11 +1,19 @@
-#!/bin/bash
+function chroot_run()
+{
+    eval -- arch-chroot "${ROOTFS_DIR}" "${RUN_CMD}"
+}
 
-# 常用变量
-work_dir=$(dirname $(dirname $(realpath -- $0)))
+function run_once()
+{
+    if [[ ! -e "${WORK_DIR}/build.${1}" ]]; then
+        "$1"
+        msg_info "执行 '$1'"
+        touch "${WORK_DIR}/build.${1}"
+    fi
+}
 
-############################################## 常用函數 ###############################################
 # 输出信息
-_msg_info() 
+function msg_info() 
 {
     local _msg="${1}"
     if [[ ${APP_NAME} == '' ]]; then
@@ -16,14 +24,14 @@ _msg_info()
 }
 
 # 输出信息
-_msg_info_pure() 
+function msg_info_pure() 
 {
     local _msg="${1}"
     printf '\033[32m%s\033[0m\n' "${_msg}" 
 }
 
 # 输出警告
-_msg_warning()
+function msg_warning()
 {
     local _msg="${1}"
     if [[ ${APP_NAME} == '' ]]; then
@@ -34,7 +42,7 @@ _msg_warning()
 }
 
 # 输出错误
-_msg_error()
+function msg_error()
 {
     local _msg="${1}"
     local _error="${2}"
@@ -48,8 +56,4 @@ _msg_error()
         exit "${_error}"
     fi
 }
-#######################################################################################################
-
-# 輸出脚本定义的变量
-#_msg_info " 工作目录:       ${work_dir}"
 

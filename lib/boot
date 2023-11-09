@@ -1,0 +1,274 @@
+#!/bin/bash
+
+function make_boot_on_fat()
+{
+    local ucodeImage allUcodeImages=()
+    msg_info "为FAT文件系统准备内核和内部文件 ..."
+    mmd -i "${WORK_DIR}/efiboot.img" \
+        "::/${ISO_DIR}" "::/${ISO_DIR}/boot" "::/${ISO_DIR}/boot/${ARCH}"
+
+    # 设置引导参数
+    cd -- "${ROOTFS_DIR}/boot"
+    vmlinuz=$(basename -- $(find -maxdepth 1 -type f -name "vmlinuz-*"))
+    initramfs=$(basename -- $(find -maxdepth 1 -type f -name "initramfs-"*".img"))
+    cd -- ${OLDPWD}
+
+    mcopy -i "${WORK_DIR}/efiboot.img" "${ROOTFS_DIR}/boot/vmlinuz-"* \
+        "${ROOTFS_DIR}/boot/initramfs-"*".img" "::/${ISO_DIR}/boot/${ARCH}/"
+
+    for ucodeImage in \
+        "${ROOTFS_DIR}/boot/"{intel-uc.img,intel-ucode.img,amd-uc.img,amd-ucode.img,early_ucode.cpio,microcode.cpio}
+    do
+        if [[ -e "${ucodeImage}" ]]; then
+            allUcodeImages+=("${ucodeImage}")
+        fi
+    done
+
+    if (( ${#allUcodeImages[@]} )); then
+        mcopy -i "${WORK_DIR}/efiboot.img" "${allUcodeImages[@]}" "::/${ISO_DIR}/boot/"
+    fi
+}
+
+function make_boot_on_iso9660()
+{
+    local ucodeImage
+
+    install -d -m 0755 -- "${ISO_DIR}/${APP_NAME}/boot/${ARCH}"
+    install    -m 0644 -- "${ROOTFS_DIR}/boot/initramfs-"*".img"   "${ISO_DIR}/${APP_NAME}/boot/${ARCH}/"
+    install    -m 0644 -- "${ROOTFS_DIR}/boot/vmlinuz-"*           "${ISO_DIR}/${APP_NAME}/boot/${ARCH}/"
+
+    for ucodeImage in ${ucodes[@]}; do
+        if [[ -e "${ROOTFS_DIR}/boot/${ucodeImage}" ]]; then
+            install -m 0644 -- "${ROOTFS_DIR}/boot/${ucodeImage}" "${ISO_DIR}/${APP_NAME}/boot/"
+            if [[ -e "${ROOTFS_DIR}/usr/share/licenses/${ucodeImage%.*}/" ]]; then
+                install -d -m 0755 -- "${ISO_DIR}/boot/licenses/${ucodeImage%.*}/"
+                install    -m 0644 -- "${ROOTFS_DIR}/usr/share/licenses/${ucodeImage%.*}/"* \
+                    "${ISO_DIR}/${APP_NAME}/boot/licenses/${ucodeImage%.*}/"
+            fi
+        fi
+    done
+}
+
+function make_common_boot_grub_cfg() 
+{
+    local _cfg search_filename
+
+    install -d -- "${WORK_DIR}/grub"
+
+    # Create a /boot/grub/YYYY-mm-dd-HH-MM-SS-00.uuid file on ISO 9660. GRUB will search for it to find the ISO
+    # volume. This is similar to what grub-mkrescue does, except it places the file in /.disk/, but we opt to use a
+    # directory that does not start with a dot to avoid it being accidentally missed when copying the ISO's contents.
+    : >"${WORK_DIR}/grub/${ISO_UUID}.uuid"
+    search_filename="/boot/grub/${ISO_UUID}.uuid"
+
+    # Fill GRUB configuration files
+    for _cfg in "${DIR_CONF}/grub/"*'.cfg'; do
+        sed "s|%ISO_LABEL%|${ISO_LABEL}|g;
+             s|%ISO_UUID%|${ISO_UUID}|g;
+             s|%INSTALL_DIR%|${APP_NAME}|g;
+             s|%ARCH%|${ARCH}|g;
+             s|%ISO_SEARCH_FILENAME%|${search_filename}|g" \
+            "${_cfg}" >"${WORK_DIR}/grub/${_cfg##*/}"
+    done
+
+    # Prepare grub.cfg that will be embedded inside the GRUB binaries
+    IFS='' read -r -d '' grubembedcfg <<'EOF' || true
+if ! [ -d "$cmdpath" ]; then
+    # On some firmware, GRUB has a wrong cmdpath when booted from an optical disc. During El Torito boot, GRUB is
+    # launched from a case-insensitive FAT-formatted EFI system partition, but it seemingly cannot access that partition
+    # and sets cmdpath to the whole cd# device which has case-sensitive ISO 9660 + Rock Ridge + Joliet file systems.
+    # See https://gitlab.archlinux.org/archlinux/archiso/-/issues/183 and https://savannah.gnu.org/bugs/?62886
+    if regexp --set=1:archiso_bootdevice '^\(([^)]+)\)\/?[Ee][Ff][Ii]\/[Bb][Oo][Oo][Tt]\/?$' "${cmdpath}"; then
+        set cmdpath="(${archiso_bootdevice})/EFI/BOOT"
+        set ARCHISO_HINT="${archiso_bootdevice}"
+    fi
+fi
+
+# Prepare a hint for the search command using the device in cmdpath
+if [ -z "${ARCHISO_HINT}" ]; then
+    regexp --set=1:ARCHISO_HINT '^\(([^)]+)\)' "${cmdpath}"
+fi
+
+# Search for the ISO volume
+if search --no-floppy --set=archiso_device --file '%ARCHISO_SEARCH_FILENAME%' --hint "${ARCHISO_HINT}"; then
+    set ARCHISO_HINT="${archiso_device}"
+    if probe --set ARCHISO_UUID --fs-uuid "${ARCHISO_HINT}"; then
+        export ARCHISO_UUID
+    fi
+else
+    echo "Could not find a volume with a '%ARCHISO_SEARCH_FILENAME%' file on it!"
+fi
+
+# Load grub.cfg
+if [ "${ARCHISO_HINT}" == 'memdisk' -o -z "${ARCHISO_HINT}" ]; then
+    echo 'Could not find the ISO volume!'
+elif [ -e "(${ARCHISO_HINT})/boot/grub/grub.cfg" ]; then
+    export ARCHISO_HINT
+    set root="${ARCHISO_HINT}"
+    configfile "(${ARCHISO_HINT})/boot/grub/grub.cfg"
+else
+    echo "File '(${ARCHISO_HINT})/boot/grub/grub.cfg' not found!"
+fi
+EOF
+    grubembedcfg="${grubembedcfg//'%ARCHISO_SEARCH_FILENAME%'/"${search_filename}"}"
+    printf '%s\n' "$grubembedcfg" >"${work_dir}/grub-embed.cfg"
+
+    # Write grubenv
+    printf '%.1024s' \
+        "$(printf '# GRUB Environment Block\nNAME=%s\nVERSION=%s\nARCHISO_LABEL=%s\nINSTALL_DIR=%s\nARCH=%s\nARCHISO_SEARCH_FILENAME=%s\n%s' \
+            "${ISO_NAME}" \
+            "${ISO_VERSION}" \
+            "${ISO_LABEL}" \
+            "" \
+            "${ARCH}" \
+            "${search_filename}" \
+            "$(printf '%0.1s' "#"{1..1024})")" \
+        >"${WORK_DIR}/grub/grubenv"
+}
+
+function make_common_boot_systemd-boot_conf.esp() 
+{
+    local _conf
+
+    # Copy systemd-boot configuration files
+    mmd -i "${efibootimg}" ::/loader ::/loader/entries
+    mcopy -i "${efibootimg}" "${profile}/efiboot/loader/loader.conf" ::/loader/
+    for _conf in "${profile}/efiboot/loader/entries/"*".conf"; do
+        sed "s|%ISO_LABEL%|${ISO_LABEL}|g;
+             s|%ISO_UUID%|${ISO_UUID}|g;
+             s|%INSTALL_DIR%|${APP_NAME}|g;
+             s|%ARCH%|${ARCH}|g" \
+            "${_conf}" | mcopy -i "${efibootimg}" - "::/loader/entries/${_conf##*/}"
+    done
+}
+
+function make_boot_uefi-x64.systemd-boot.esp() 
+{
+    _msg_info "Setting up systemd-boot for x64 UEFI booting..."
+
+    run_once make_common_boot_systemd-boot
+
+    # Copy systemd-boot EFI binary to the default/fallback boot path
+    mcopy -i "${efibootimg}" \
+        "${pacstrap_dir}/usr/lib/systemd/boot/efi/systemd-bootx64.efi" ::/EFI/BOOT/BOOTx64.EFI
+
+    # Copy systemd-boot configuration files
+    run_once make_common_boot_systemd-boot_conf.esp
+
+    # shellx64.efi is picked up automatically when on /
+    if [[ -e "${pacstrap_dir}/usr/share/edk2-shell/x64/Shell_Full.efi" ]]; then
+        mcopy -i "${efibootimg}" \
+            "${pacstrap_dir}/usr/share/edk2-shell/x64/Shell_Full.efi" ::/shellx64.efi
+    fi
+
+    # Copy kernel and initramfs to FAT image.
+    # systemd-boot can only access files from the EFI system partition it was launched from.
+    run_once make_boot_on_fat
+
+    _msg_info "Done! systemd-boot set up for x64 UEFI booting successfully."
+}
+
+
+
+############################################
+
+# bios.syslinux.mbr
+function make_boot_bios.syslinux.mbr()
+{
+    msg_info "配置 syslinux BIOS 引导..."
+    install -d -m 0755 -- "${ISO_DIR}/boot/syslinux"
+
+    for _cfg in "${DIR_CONF}/syslinux/"*.cfg; do
+        sed "s|%ISO_LABEL%|${ISO_LABEL}|g; \
+             s|%INSTALL_DIR%|${APP_NAME}|g; \
+             s|%ISO_UUID%|${ISO_UUID}|g; \
+             s|%ARCH%|${ARCH}|g" \
+            "${_cfg}" > "${ISO_DIR}/boot/syslinux/${_cfg##*/}"
+    done
+
+    if [[ -e "${DIR_CONF}/syslinux/splash.png" ]]; then
+        install -m 0644 -- "${DIR_CONF}/syslinux/splash.png" "${ISO_DIR}/boot/syslinux/"
+    fi
+
+    install -m 0644 -- "${ROOTFS_DIR}/usr/lib/syslinux/bios/"*.c32          "${ISO_DIR}/boot/syslinux/"
+    install -m 0644 -- "${ROOTFS_DIR}/usr/lib/syslinux/bios/lpxelinux.0"    "${ISO_DIR}/boot/syslinux/"
+    install -m 0644 -- "${ROOTFS_DIR}/usr/lib/syslinux/bios/memdisk"        "${ISO_DIR}/boot/syslinux/"
+   
+    run_once make_boot_on_iso9660
+   
+    if [[ -e "${ISO_DIR}/boot/syslinux/hdt.c32" ]]; then
+        install -d -m 0755 -- "${ISO_DIR}/boot/syslinux/hdt"
+        if [[ -e "${ROOTFS_DIR}/usr/share/hwdata/pci.ids" ]]; then
+            gzip -c -9 "${ROOTFS_DIR}/usr/share/hwdata/pci.ids" > \
+                "${ISO_DIR}/boot/syslinux/hdt/pciids.gz"
+        fi
+
+        find "${ROOTFS_DIR}/usr/lib/modules" -name 'modules.alias' -print -exec gzip -c -9 '{}' ';' -quit > \
+                "${ISO_DIR}/boot/syslinux/hdt/modalias.gz"
+    fi
+   
+   if [[ -e "${ROOTFS_DIR}/boot/memtest86+/memtest.bin" ]]; then
+       install -d -m 0755   -- "${ISO_DIR}/boot/memtest86+"
+       install    -m 0644   -- "${ROOTFS_DIR}/boot/memtest86+/memtest.bin" "${ISO_DIR}/boot/memtest86+/memtest"
+       install    -m 0644   -- "${ROOTFS_DIR}/usr/share/licenses/common/GPL2/license.txt" "${ISO_DIR}/boot/memtest86+/"
+   fi
+}
+
+# bios.syslinux.eltorito
+function make_boot_bios.syslinux.eltorito()
+{
+    install -d -m 0755 -- "${ISO_DIR}/boot/syslinux"
+    install    -m 0644 -- "${ROOTFS_DIR}/usr/lib/syslinux/bios/isolinux.bin" "${ISO_DIR}/boot/syslinux/"
+    install    -m 0644 -- "${ROOTFS_DIR}/usr/lib/syslinux/bios/isohdpfx.bin" "${ISO_DIR}/boot/syslinux/"
+
+    run_once make_boot_bios.syslinux.mbr
+}
+
+function make_boot_uefi-ia32.grub.esp() 
+{
+    local grubModules=()
+
+    run_once make_common_boot_grub_cfg
+
+    # Create EFI binary
+    # Module list from https://bugs.archlinux.org/task/71382#comment202911
+    grubmodules=(all_video at_keyboard boot btrfs cat chain configfile echo efifwsetup efinet exfat ext2 f2fs fat font \
+                 gfxmenu gfxterm gzio halt hfsplus iso9660 jpeg keylayouts linux loadenv loopback lsefi lsefimmap \
+                 minicmd normal ntfs ntfscomp part_apple part_gpt part_msdos png read reboot regexp search \
+                 search_fs_file search_fs_uuid search_label serial sleep tpm udf usb usbserial_common usbserial_ftdi \
+                 usbserial_pl2303 usbserial_usbdebug video xfs zstd)
+    grub-mkstandalone -O i386-efi \
+        --modules="${grubmodules[*]}" \
+        --locales="en@quot" \
+        --themes="" \
+        --sbat=/usr/share/grub/sbat.csv \
+        --disable-shim-lock \
+        -o "${WORK_DIR}/BOOTIA32.EFI" "boot/grub/grub.cfg=${WORK_DIR}/grub-embed.cfg"
+    # Add GRUB to the list of files used to calculate the required FAT image size.
+    efiboot_files+=("${WORK_DIR}/BOOTIA32.EFI"
+                    "${ROOTFS_DIR}/usr/share/edk2-shell/ia32/Shell_Full.efi")
+
+    if [[ " ${bootmodes[*]} " =~ uefi-x64.systemd-boot.esp ]]; then
+        run_once make_boot_uefi-x64.systemd-boot.esp
+    elif [[ " ${bootmodes[*]} " =~ uefi-x64.grub.esp ]]; then
+        run_once _make_boot_uefi-x64.grub.esp
+    else
+        efiboot_imgsize="$(du -bcs -- "${efiboot_files[@]}" 2>/dev/null | awk 'END { print $1 }')"
+        # Create a FAT image for the EFI system partition
+        make_efibootimg "$efiboot_imgsize"
+    fi
+
+    # Copy GRUB EFI binary to the default/fallback boot path
+    mcopy -i "${efibootimg}" "${WORK_DIR}/BOOTIA32.EFI" ::/EFI/BOOT/BOOTIA32.EFI
+
+    # Copy GRUB files
+    run_once make_common_boot_grub_copy_to_isofs
+
+    if [[ -e "${pacstrap_dir}/usr/share/edk2-shell/ia32/Shell_Full.efi" ]]; then
+        mcopy -i "${efibootimg}" "${pacstrap_dir}/usr/share/edk2-shell/ia32/Shell_Full.efi" ::/shellia32.efi
+    fi
+
+    msg_info "Done! GRUB set up for UEFI booting successfully."
+}
+
+

@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # 配置环境
 export LANG="C"
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-"$(date +%s)"}"
@@ -14,31 +16,35 @@ ISO_NAME="graceful-linux"                       # 镜像名
 ISO_LABEL="${APP_NAME}"                         #
 ISO_PUBLISHER="${APP_NAME}"                     #
 ISO_APPLICATION="${APP_NAME} ISO"               #
-ISO_NAME="${ISO_NAME}-${ISO_VERSION}.iso"       # 镜像名(全名)
-
+ISO_NAME_FULL="${ISO_NAME}-${ISO_VERSION}.iso"  # 镜像名(全名)
+ISO_UUID=$(uuidgen)                             # 磁盘UUID
+readonly ucodes=('intel-uc.img' 'intel-ucode.img' 'amd-uc.img' 'amd-ucode.img' 'early_ucode.cpio' 'microcode.cpio')
 
 # 路径
 WORK_DIR="${DIR_BASE}/work"                     # 工作根目录
-ISO_TEMP_DIR="${WORK_DIR}/iso/tmp"              #
-ISO_DIR="${WORK_DIR}/iso/iso"
+ISO_DIR="${WORK_DIR}/iso"
 ROOTFS_DIR="${WORK_DIR}/rootfs"                 # 文件系统根目录
 
 PROFILE=""
 RUN_CMD=""
-BOOT_MODES=()
 
+BUILD_MODES=('iso')
 
-ROOTFS_IMAGE_TOOL_OPTIONS=('-comp' 'xz')
+#'uefi-ia32.grub.esp' 'uefi-x64.grub.esp'
+#'uefi-ia32.grub.eltorito' 'uefi-x64.grub.eltorito'
+BOOT_MODES=('bios.syslinux.mbr' 'bios.syslinux.eltorito'
+            )
+ROOTFS_IMAGE_TOOL_OPTIONS=('-comp' 'xz' '-Xbcj' 'x86' '-b' '1M' '-Xdict-size' '1M')
 
 # 镜像中的软件包
-PKG_LIST=( \
-alsa-utils \
-base \
-linux \
-mkinitcpio \
-mkinitcpio-archiso \
-openssh \
-syslinux \
+PKG_LIST=(
+alsa-utils
+base
+linux
+mkinitcpio
+mkinitcpio-archiso
+openssh
+syslinux
 # 图形包
 gnome
 )
