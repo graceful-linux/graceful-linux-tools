@@ -59,6 +59,8 @@ function make_boot_bios.syslinux.mbr()
 {
     msg_info "配置 syslinux BIOS 引导..."
     install -d -m 0755 -- "${ISO_DIR}/boot/syslinux"
+    install -d -m 0755 -- "${ISO_DIR}/${APP_NAME}/boot/licenses/amd-ucode"
+    install -d -m 0755 -- "${ISO_DIR}/${APP_NAME}/boot/licenses/intel-ucode"
 
     for _cfg in "${DIR_CONF}/syslinux/"*.cfg; do
         sed "s|%ISO_LABEL%|${ISO_LABEL}|g; \
@@ -94,6 +96,7 @@ function make_boot_bios.syslinux.mbr()
        install    -m 0644   -- "${ROOTFS_DIR}/boot/memtest86+/memtest.bin" "${ISO_DIR}/boot/memtest86+/memtest"
        install    -m 0644   -- "${ROOTFS_DIR}/usr/share/licenses/common/GPL2/license.txt" "${ISO_DIR}/boot/memtest86+/"
    fi
+    msg_info "配置 syslinux BIOS 引导完成！"
 }
 
 # bios.syslinux.eltorito

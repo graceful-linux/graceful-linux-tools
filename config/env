@@ -40,17 +40,15 @@ BUILD_MODE='iso'
 BUILD_DATE_FILE="${WORK_DIR}/build-date"
 
 # 引导镜像中的软件包
-BOOTSTRAP_PKG_LIST=(arch-install-scripts base)
+#BOOTSTRAP_PKG_LIST=(arch-install-scripts base)
 
 # 镜像中的软件包
 PKG_LIST=(
-alsa-utils
-base
-linux
-mkinitcpio
-mkinitcpio-archiso
-openssh
-syslinux
-# 图形包
-gnome
+base                        # 文件系统          必须
+linux                       # 内核              必须
+syslinux                    # ISO 引导需要      必须
+mkinitcpio                  # 制作 initramfs    必须
+intel-ucode                 # intel x86         必须
+amd-ucode                   # amd x86           必须
+gnome                       # gnome 图形包      可选
 )
