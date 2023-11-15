@@ -1,5 +1,77 @@
 #!/bin/bash
 
+function validate_requirements_rootfs_image_type_squashfs()
+{
+    if ! command -v mksquashfs &>/dev/null; then
+        msg_error "缺少 mksquashfs 命令!" 1
+    fi
+}
+
+function run_mksquashfs() {
+    local mksquashfsOptions=() imagePath="${ISO_DIR}/${APP_NAME}/${ARCH}/airootfs.sfs"
+    rm -f -- "${imagePath}"
+    mksquashfsOptions+=('-no-progress' '-quiet')
+    mksquashfs "$@" "${imagePath}" -noappend "${ROOTFS_IMAGE_SQUASHFS_OPTIONS[@]}" "${mksquashfsOptions[@]}"
+}
+
+function make_rootfs_squashfs()
+{
+    install -d -m 0755 -- "${ISO_DIR}/${APP_NAME}/${ARCH}"
+    msg_info "Creating SquashFS image, this may take some time..."
+    run_mksquashfs "${ROOTFS_DIR}"
+}
+
+
+# 检查配置是否合理
+function build_mode_requirements_iso()
+{
+    # Check if the specified airootfs_image_type is supported
+    if typeset -f "make_rootfs_${ROOTFS_IMAGE_TYPE}" &>/dev/null; then
+        if typeset -f "validate_requirements_rootfs_image_type_${ROOTFS_IMAGE_TYPE}" &>/dev/null; then
+            "validate_requirements_rootfs_image_type_${ROOTFS_IMAGE_TYPE}"
+        else
+            msg_warn "缺少 'validate_requirements_rootfs_image_type_${ROOTFS_IMAGE_TYPE}' 函数!"
+        fi
+    else
+        msg_error "不支持: '${ROOTFS_IMAGE_TYPE}' 镜像类型!"
+    fi
+
+    # FIXME:// 检测 pacman、find、gzip 命令是否存在
+    
+    # 检测 bootmodes 中的值是否可用
+    for bootMode in "${BOOT_MODES[@]}"; do
+        if typeset -f "make_boot_${bootMode}" &>/dev/null; then
+            if typeset -f "validate_requirements_boot_${bootMode}" &>/dev/null; then
+                "validate_requirements_boot_${bootMode}"
+            else
+                msg_error "'validate_requirements_boot_${bootMode}' 不存在!" 1
+            fi
+        else
+            msg_error "不支持 '${bootMode}'!" 1
+        fi
+    done
+}
+
+function check_is_validate_options()
+{
+    local vError=0 
+
+    msg_info "检查配置是否正确..."
+
+    if [[ ! -e "${PACMAN_CONF}" ]]; then
+        (( vError=vError+1 ))
+        msg_error "'${PACMAN_CONF}' 不存在." 1
+    fi
+
+    # 检查 iso 构建是否存在
+    if typeset -f "build_mode_requirements_${BUILD_MODE}" &>/dev/null; then
+        build_mode_requirements_${BUILD_MODE}
+    else
+        msg_error "'build_mode_requirements_${BUILD_MODE}' 不存在!" 1
+    fi
+    
+    msg_info "完成!"
+}
 
 function _chroot_run()
 {
@@ -17,23 +89,47 @@ function _mount_rootfs()
 
 
 # 创建镜像
-function _make_rootfs_create_image()
+function make_rootfs_create_image()
 {
     if (( $# < 1 )); then
         msg_error "函数 '${FUNCNAME[0]}' 至少需要一个参数" 1
     fi
 
+    msg_info "${ROOTFS_IMAGE_TYPE}..."
     imagePath="${ISO_DIR}/${APP_NAME}/${ARCH}/airootfs.sfs"
-    if [[ "${ROOTFS_IMAGE_TYPE}" =~ .*squashfs ]] ; then
-        msg_info "mksquashfs $@ ${imagePath} -noappend ${ROOTFS_IMAGE_TOOL_OPTIONS[@]}"
-        mksquashfs "$@" "${imagePath}" -noappend "${ROOTFS_IMAGE_TOOL_OPTIONS[@]}"
+    if [[ "${ROOTFS_IMAGE_TYPE}" == 'ext4+squashfs' ]] ; then
+        msg_info "正在生成ext4+squashfs镜像..."
+        mkfsExt4Options=( \
+                '-d' "${ROOTFS_DIR}" \
+                '-O' '^has_journal,^resize_inode' \
+                '-E' "lazy_itable_init=0,root_owner=0:0,hash_seed=${ISO_UUID}" \
+                '-m' '0' \
+                '-F' \
+                '-U' 'clear' \
+            )
+        rm -f -- "${ROOTFS_DIR}/.img"
+        E2FSPROGS_FAKE_TIME="${BUILD_DATE}" mkfs.ext4 "${mkfsExt4Options[@]}" -- "${ROOTFS_DIR}/.img" 32G
+        trune2fs -c 0 -i 0 -- "${imagePath}" > /dev/null
+    
+        imagePath="${ISO_DIR}/${APP_NAME}/${ARCH}/airootfs.sfs"
+        rm -f -- "${imagePath}"
+
+        msg_info "mksquashfs $@ ${imagePath} -noappend ${ROOTFS_IMAGE_SQUASHFS_OPTIONS[@]}"
+        mksquashfs "${ROOTFS_DIR}/.img" "${imagePath}" -noappend "${ROOTFS_IMAGE_TOOL_OPTIONS[@]}"
+        rm -f -- "${ROOTFS_DIR}/.img"
+
+    elif [[ "${ROOTFS_IMAGE_TYPE}" == 'erofs' ]] ; then
+        msg_info "正在生成erofs镜像..."
+        imagePath="${ISO_DIR}/${APP_NAME}/${ARCH}/airootfs.erofs"
+        mkfsErofsOptions=( '-U' "${ISO_UUID}" "${ROOTFS_IMAGE_TOOL_OPTIONS[@]}" )
+        mkfs.erofs "${mkfsErofsOptions[@]}" -- "${imagePath}" "${ROOTFS_DIR}"
     else
         msg_error "不支持的镜像类型: '${ROOTFS_IMAGE_TYPE}'" 1
     fi
 }
 
 # 从源目录在SquashFS中创建ext4文件系统
-function _make_rootfs_img()
+function make_rootfs_img()
 {
     if [[ ! -e "${ROOTFS_DIR}" ]]; then
         msg_error "'${ROOTFS_DIR}' 路径不存在" 1
@@ -56,13 +152,13 @@ function _make_rootfs_img()
 
     install -d -m 0755 -- "${WORK_DIR}/${INSTALL_DIR}/${ARCH}"
     msg_info "正在创建 SquashFS 镜像, 可能需要花点时间 ..."
-    _make_rootfs_create_image "${ROOTFS_DIR}"
+    make_rootfs_create_image "${ROOTFS_DIR}"
 
     msg_info "rm -- ${ROOTFS_DIR}.img"
     rm -- "${ROOTFS_DIR}.img"
 }
 
-function _make_rootfs_sfs()
+function make_rootfs_sfs()
 {
     if [[ ! -e "${ROOTFS_DIR}" ]]; then
         msg_error "'${ROOTFS_DIR}' 路径不存在" 1
@@ -70,10 +166,10 @@ function _make_rootfs_sfs()
 
     install -d -m 0755 -- "${ISO_DIR}/${APP_NAME}/${ARCH}"
     msg_info "正在创建 SquashFS 镜像, 这可能需要花点时间 ..."
-    _make_rootfs_create_image "${ROOTFS_DIR}"
+    make_rootfs_create_image "${ROOTFS_DIR}"
 }
 
-function _mkchecksum()
+function mkchecksum()
 {
     cd -- "${ISO_DIR}/${APP_NAME}/${ARCH}"
     chmod 0777 "${ISO_DIR}/${APP_NAME}/${ARCH}"
@@ -113,38 +209,37 @@ function show_config
     msg_info_pure "${APP_NAME} 配置值如下："
     msg_info_pure "             架构:       ${ARCH}"
     msg_info_pure "         工作目录:       ${WORK_DIR}"
-#    msg_info_pure "         安装目录:       ${INSTALL_DIR}"
     msg_info_pure "         构建时间:       ${BUILD_DATE}"
-#    msg_info_pure "       输出文件夹:       ${OUT_DIR}"
     msg_info_pure "         GPG 指纹:       ${GPG_KEY:-None}"
-    msg_info_pure "         配置文件:       ${PROFILE}"
+    msg_info_pure "         配置文件:       ${DIR_CONF}/env"
     msg_info_pure "  pacman 配置文件:       ${PACMAN_CONF}"
     msg_info_pure "       镜像文件名:       ${ISO_NAME}"
     msg_info_pure "       ISO 卷标签:       ${ISO_LABEL}"
     msg_info_pure "       ISO 出版者:       ${ISO_PUBLISHER}"
     msg_info_pure "         ISO 名字:       ${ISO_APPLICATION}"
-    msg_info_pure "         引导模式:       ${BOOT_MODULES[*]}"
+    msg_info_pure "         引导模式:       ${BOOT_MODES[*]}"
     msg_info_pure "       要安裝的包:       ${PKG_LIST[*]}"
 }
 
 function make_pacman_conf()
 {
+    install --mode=0777 -d "${WORK_DIR}"
+    [[ -e "${BUILD_DATE_FILE}" ]] || printf '%s\n' "${SOURCE_DATE_EPOCH}" > "${BUILD_DATE_FILE}"
+   
     local CACHE_DIR SYS_CACHE_DIR PROFILE_CACHE_DIR
     SYS_CACHE_DIR="$(pacman-conf CacheDir| tr '\n' ' ')"
     PROFILE_CACHE_DIR="$(pacman-conf --config "${PACMAN_CONF}" CacheDir| tr '\n' ' ')"
 
-    install --mode=0777 -d "${WORK_DIR}"
-   
     # 设置缓存目录
-   if [[ "${PROFILE_CACHE_DIR}" != "/var/cache/pacman/pkg" ]] && \
-       [[ "${SYS_CACHE_DIR}" != "${PROFILE_CACHE_DIR}" ]]; then
+   if [[ "${PROFILE_CACHE_DIR}" != "/var/cache/pacman/pkg" ]] \
+       && [[ "${SYS_CACHE_DIR}" != "${PROFILE_CACHE_DIR}" ]]; then
        CACHE_DIR="${PROFILE_CACHE_DIR}"
    else
        CACHE_DIR="${SYS_CACHE_DIR}"
    fi
    
-   pacman-conf --config "${PACMAN_CONF}" | \
-       sed '/CacheDir/d;/DBPath/d;/HookDir/d;/LogFile/d;/RootDir/d' > "${WORK_DIR}/pacman.conf"
+   pacman-conf --config "${PACMAN_CONF}" \
+       | sed '/CacheDir/d;/DBPath/d;/HookDir/d;/LogFile/d;/RootDir/d' > "${WORK_DIR}/pacman.conf"
    
    sed "/\[options\]/a CacheDir = ${CACHE_DIR}
         /\[options\]/a HookDir = ${ROOTFS_DIR}/etc/pacman.d/hooks/" \
@@ -166,7 +261,6 @@ function make_custom_rootfs()
 
     if [[ -d "${DIR_CONF}/rootfs" ]]; then
         cp -af --no-preserve=ownership -- "${DIR_CONF}/rootfs/." "${ROOTFS_DIR}"
-
         [[ -e "${ROOTFS_DIR}/etc/shadow" ]]  && chmod -f 0400 -- "${ROOTFS_DIR}/etc/shadow"
         [[ -e "${ROOTFS_DIR}/etc/gshadow" ]] && chmod -f 0400 -- "${ROOTFS_DIR}/etc/gshadow"
 
@@ -200,6 +294,34 @@ function make_packages()
     fi
 }
 
+function make_version()
+{
+    rm -f -- "${ROOTFS_DIR}/version"
+    printf '%s\n' "${ISO_VERSION}" > "${ROOTFS_DIR}/version"
+
+    install -d -m 0755 -- "${ISO_DIR}/${APP_NAME}"
+    printf '%s\n' "${ISO_VERSION}" > "${ISO_DIR}/${APP_NAME}/version"
+
+    rm -f -- "${ISO_DIR}/${APP_NAME}/grubenv"
+    printf '%.1024s' "$(printf '# GRUB Environment Block\nNAME=%s\nVERSION=%s\n%s' \
+            "${ISO_NAME}" "${ISO_VERSION}" "$(printf '%0.1s' "#"{1..1024})")" \
+            > "${ISO_DIR}/${APP_NAME}/grubenv"
+
+    osRelease="$(realpath -- "${ROOTFS_DIR}/etc/os-release")"
+    if [[ ! -e "${ROOTFS_DIR}/etc/os-release" && -e "${ROOTFS_DIR}/usr/lib/os-release" ]]; then
+        osRelease="$(realpath -- "${ROOTFS_DIR}/usr/lib/os-release")"
+    fi
+
+    if [[ "${osRelease}" == "${ROOTFS_DIR}"* ]]; then
+        [[ ! -e "${osRelease}" ]] || sed -i '/^IMAGE_ID=/d;/^IMAGE_VERSION=/d' "${osRelease}"
+        printf 'IMAGE_ID=%s\nIMAGE_VERSION=%s\n' "${ISO_NAME}" "${ISO_VERSION}" >>"${osRelease}"
+    fi
+
+    # Touch /usr/lib/clock-epoch to give another hint on date and time
+    # for systems with screwed or broken RTC.
+    touch -m -d"@${SOURCE_DATE_EPOCH}" -- "${ROOTFS_DIR}/usr/lib/clock-epoch"
+}
+
 function make_customize_rootfs()
 {
     local passwd=()
@@ -224,13 +346,57 @@ function make_customize_rootfs()
 
 function make_pkg_list()
 {
-    install -d -m 0755 -- "${WORK_DIR}"
-    pacman -Q --sysroot ${ROOTFS_DIR} > ${WORK_DIR}/pkglist.${ARCH}.txt
+    install -d -m 0755 -- "${ISO_DIR}/${APP_NAME}"
+    pacman -Q --sysroot ${ROOTFS_DIR} > ${ISO_DIR}/${APP_NAME}/pkglist.${ARCH}.txt
+}
+
+function make_common_grub_env_and_loopbackcfg() 
+{
+    local searchFilename
+
+    install -d -m 0755 -- "${ISO_DIR}/boot/grub"
+    # Create a /boot/grub/YYYY-mm-dd-HH-MM-SS-00.uuid file on ISO 9660. GRUB will search for it to find the ISO
+    # volume. This is similar to what grub-mkrescue does, except it places the file in /.disk/, but we opt to use a
+    # directory that does not start with a dot to avoid it being accidentally missed when copying the ISO's contents.
+    searchFilename="/boot/grub/${ISO_UUID}.uuid"
+    : >"${ISO_DIR}/${searchFilename}"
+
+    # Write grubenv
+    printf '%.1024s' \
+        "$(printf '# GRUB Environment Block\nNAME=%s\nVERSION=%s\nARCHISO_LABEL=%s\nINSTALL_DIR=%s\nARCH=%s\nISO_SEARCH_FILENAME=%s\n%s' \
+            "${ISO_NAME}" \
+            "${ISO_VERSION}" \
+            "${ISO_LABEL}" \
+            "${APP_NAME}" \
+            "${ARCH}" \
+            "${searchFilename}" \
+            "$(printf '%0.1s' "#"{1..1024})")" \
+        >"${ISO_DIR}/boot/grub/grubenv"
+
+    # Copy loopback.cfg to /boot/grub/ on ISO 9660
+    if [[ -e "${DIR_CONF}/grub/loopback.cfg" ]]; then
+        sed "s|%ISO_LABEL%|${ISO_LABEL}|g;
+             s|%ISO_UUID%|${ISO_UUID}|g;
+             s|%INSTALL_DIR%|${APP_NAME}|g;
+             s|%ARCH%|${ARCH}|g;
+             s|%ISO_SEARCH_FILENAME%|${searchFilename}|g" \
+            "${DIR_CONF}/grub/loopback.cfg" >"${ISO_DIR}/boot/grub/loopback.cfg"
+    fi
+}
+
+function make_bootstrap_image()
+{
+    msg_info "创建可引导镜像..."
+    cd -- "${WORK_DIR}"
+    bsdtar -cf - "rootfs" | gzip -cn9 > "${WORK_DIR}/${ISO_NAME_FULL}"
+    du -h -- "${WORK_DIR}/${ISO_NAME_FULL}"
+    cd -- "${OLDPWD}"
 }
 
 function make_boot_modes()
 {
     local bootmode
+    msg_info "Boot modes: ${BOOT_MODES[@]}"
     for bootmode in "${BOOT_MODES[@]}"; do
         if typeset -f "make_boot_${bootmode}" &> /dev/null; then
             run_once "make_boot_${bootmode}"
@@ -238,6 +404,10 @@ function make_boot_modes()
             msg_error "无效的 boot 模式: ${bootmode}" 1
         fi
     done
+
+    if [[ "${BOOT_MODES[*]}" != *grub* ]]; then
+        run_once make_common_grub_env_and_loopbackcfg
+    fi
 }
 
 function make_cleanup()
@@ -281,15 +451,12 @@ function make_cleanup()
 
 function make_prepare()
 {
-    if [[ "${ROOTFS_IMAGE_TYPE}" == "squashfs" ]]; then                 # prepare airootfs.sfs for overlayfs usage (default)
-        run_once _make_rootfs_sfs
-    elif [[ "${ROOTFS_IMAGE_TYPE}" == "ext4+squashfs" ]]; then          # prepare airootfs.sfs for dm-snapshot usage
-        run_once _make_rootfs_img
-    else
+    if ! typeset -f "make_rootfs_${ROOTFS_IMAGE_TYPE}" &>/dev/null; then
         msg_error "不支持的镜像类型: '${ROOTFS_IMAGE_TYPE}'" 1
     fi
-    
-    _mkchecksum
+
+    run_once make_rootfs_${ROOTFS_IMAGE_TYPE}
+    mkchecksum
     
     if [[ "${GPG_KEY}" ]]; then
         _mksignature
@@ -299,10 +466,13 @@ function make_prepare()
 # Build ISO
 function make_iso()
 {
-    local xorrisofs_options=()
+    local xorrisofsOptions=()
 
-    for bootmode in "${bootmodes[@]}"; do
-        typeset -f "_add_xorrisofs_options_${bootmode}" &>/dev/null && "_add_xorrisofs_options_${bootmode}"
+    for bootmode in "${BOOT_MODES[@]}"; do
+        if ! typeset -f "add_xorrisofs_options_${bootmode}"; then
+            msg_warn "没找到 ${bootmode} 配置!"
+        fi
+        "add_xorrisofs_options_${bootmode}"
     done
 
     msg_info "开始创建 ISO 镜像 ..."
@@ -314,11 +484,11 @@ function make_iso()
         -joliet \
         -joliet-long \
         -rational-rock \
-        -volid "${ISO_LABEL}" \
-        -appid "${ISO_APPLICATION}" \
-        -publisher "${ISO_PUBLISHER}" \
+        -volid "graceful-linux" \
+        -appid "graceful-linux" \
+        -publisher "graceful-linux" \
         -preparer "${APP_NAME}" \
-        "${xorrisofs_options[@]}" \
+        "${xorrisofsOptions[@]}" \
         -output "${WORK_DIR}/${ISO_NAME_FULL}" \
         ${ISO_DIR}
     msg_info "完成!"
