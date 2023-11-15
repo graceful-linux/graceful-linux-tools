@@ -3,6 +3,7 @@
 set -e -u
 
 DIR_BASE=$(dirname $(dirname $(realpath -- $0)))
+
 DIR_BIN=${DIR_BASE}/bin
 DIR_LIB=${DIR_BASE}/lib
 DIR_CONF=${DIR_BASE}/config

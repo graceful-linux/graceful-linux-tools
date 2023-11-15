@@ -214,9 +214,7 @@ function show_config
     msg_info_pure "         配置文件:       ${DIR_CONF}/env"
     msg_info_pure "  pacman 配置文件:       ${PACMAN_CONF}"
     msg_info_pure "       镜像文件名:       ${ISO_NAME}"
-    msg_info_pure "       ISO 卷标签:       ${ISO_LABEL}"
-    msg_info_pure "       ISO 出版者:       ${ISO_PUBLISHER}"
-    msg_info_pure "         ISO 名字:       ${ISO_APPLICATION}"
+    msg_info_pure "             UUID:       ${ISO_UUID}"
     msg_info_pure "         引导模式:       ${BOOT_MODES[*]}"
     msg_info_pure "       要安裝的包:       ${PKG_LIST[*]}"
 }

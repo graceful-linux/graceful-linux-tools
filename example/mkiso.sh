@@ -1,6 +1,6 @@
 #!/bin/bash
 opts+=(
-        '-isohybrid-mbr' "./iso/boot/syslinux/isohdpfx.bin"
+        '-isohybrid-mbr' "../work/iso/boot/syslinux/isohdpfx.bin"
         # When GPT is used, create an additional partition in the MBR (besides 0xEE) for sectors 0–1 (MBR
         # bootstrap code area) and mark it as bootable
         # May allow booting on some systems
@@ -25,7 +25,8 @@ sudo xorriso \
     -volid graceful-linux \
     -appid ga \
     -publisher gf \
+    -uuid 121231-12313 \
     -preparer "prepares" \
     "${opts[@]}" \
     -output aa.iso \
-    ./iso/
+    ../work/iso/

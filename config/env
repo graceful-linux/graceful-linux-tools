@@ -13,10 +13,8 @@ PACMAN_CONF="/etc/pacman.conf"
 ISO_VERSION="0.0.1"                             # 版本号
 ISO_NAME="graceful-linux"                       # 镜像名
 ISO_LABEL="${APP_NAME}"                         #
-ISO_PUBLISHER="${APP_NAME}"                     #
-ISO_APPLICATION="${APP_NAME} ISO"               #
 ISO_NAME_FULL="${ISO_NAME}-${ISO_VERSION}.iso"  # 镜像名(全名)
-ISO_UUID=$(uuidgen)                             # 磁盘UUID
+ISO_UUID=$(TZ='UTC' date --date="@$SOURCE_DATE_EPOCH" +"%F-%H-%M-%S-00")
 BUILD_DATE=$(date +%s)                          # 构建时间戳
 readonly ucodes=('intel-uc.img' 'intel-ucode.img' 'amd-uc.img' 'amd-ucode.img' 'early_ucode.cpio' 'microcode.cpio')
 
@@ -38,6 +36,10 @@ ROOTFS_IMAGE_SQUASHFS_OPTIONS=('-comp' 'xz' '-Xbcj' 'x86' '-b' '1M' '-Xdict-size
 
 BUILD_MODE='iso'
 BUILD_DATE_FILE="${WORK_DIR}/build-date"
+
+[[ -f "${BUILD_DATE_FILE}" ]] \
+    && export SOURCE_DATE_EPOCH="$(<"${BUILD_DATE_FILE}")"
+ISO_UUID=$(TZ='UTC' date --date="@$SOURCE_DATE_EPOCH" +"%F-%H-%M-%S-00")
 
 # 引导镜像中的软件包
 #BOOTSTRAP_PKG_LIST=(arch-install-scripts base)
