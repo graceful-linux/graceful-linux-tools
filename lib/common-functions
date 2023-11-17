@@ -322,24 +322,27 @@ function make_version()
 
 function make_customize_rootfs()
 {
-    local passwd=()
+#    local passwd=()
 
-    if [[ -e "${ROOTFS_DIR}/etc/passwd" ]]; then
-        while IFS=':' read -a passwd -r; do
-            (( passwd[2] >= 1000 && passwd[2] < 60000 )) || continue
-            [[ "${passwd[5]}" == '/' ]] && continue
-            [[ -z "${passwd[5]}" ]] && continue
-            cp -dnRT --preserve=mode,timestamps,links -- "${ROOTFS_DIR}/etc/skel" "${ROOTFS_DIR}${passwd[5]}"
-            chmod -f 0750 -- "${ROOTFS_DIR}${passwd[5]}"
-            chown -hR -- "${passwd[2]}:${passwd[3]}" "${ROOTFS_DIR}${passwd[5]}"
-        done < "${ROOTFS_DIR}/etc/passwd"
-    fi
+#    if [[ -e "${ROOTFS_DIR}/etc/passwd" ]]; then
+#        while IFS=':' read -a passwd -r; do
+#            (( passwd[2] >= 1000 && passwd[2] < 60000 )) || continue
+#            [[ "${passwd[5]}" == '/' ]] && continue
+#            [[ -z "${passwd[5]}" ]] && continue
+#            cp -dnRT --preserve=mode,timestamps,links -- "${ROOTFS_DIR}/etc/skel" "${ROOTFS_DIR}${passwd[5]}"
+#            chmod -f 0750 -- "${ROOTFS_DIR}${passwd[5]}"
+#            chown -hR -- "${passwd[2]}:${passwd[3]}" "${ROOTFS_DIR}${passwd[5]}"
+#        done < "${ROOTFS_DIR}/etc/passwd"
+#    fi
    
-    if [[ -e "${ROOTFS_DIR}/root/customize-gracefullinux.sh" ]]; then
-        local RUN_CMD="/root/customize-gracefullinux.sh"
-        chroot_run
-        rm -- "${ROOTFS_DIR}/root/customize-gracefullinux.sh"
-    fi
+#    if [[ -e "${ROOTFS_DIR}/root/customize-gracefullinux.sh" ]]; then
+#        local RUN_CMD="/root/customize-gracefullinux.sh"
+#        chroot_run
+#        rm -- "${ROOTFS_DIR}/root/customize-gracefullinux.sh"
+#    fi
+
+    # 将mkinitcpio相关内容复制到指定位置
+    kernelName=$(ls ${ROOTFS_DIR}/usr/lib/modules/ | xargs | tr -d '\n')
 }
 
 function make_pkg_list()
