@@ -21,6 +21,7 @@ show_config                                 # 显示配置
 run_once make_pacman_conf                   # 生成 pacman.conf
 run_once export_gpg_public_key              # 导出 gpg 
 run_once make_custom_rootfs                 # 将 config/rootfs 复制到根文件系统
+run_once make_initramfs_config              #
 run_once make_packages                      # 将安装包安装到根文件系统
 run_once make_version                       # 添加版本信息
 run_once make_customize_rootfs              # 定制根文件系统

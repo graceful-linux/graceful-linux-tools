@@ -1,5 +1,25 @@
 #!/bin/bash
 
+function _chroot_unmount()
+{
+    [[ $(ls "${ROOTFS_DIR}/dev"  | wc -l) -gt 0 ]] && umount -f "${ROOTFS_DIR}/dev"
+    [[ $(ls "${ROOTFS_DIR}/sys"  | wc -l) -gt 0 ]] && umount -f "${ROOTFS_DIR}/sys"
+    [[ $(ls "${ROOTFS_DIR}/proc" | wc -l) -gt 0 ]] && umount -f "${ROOTFS_DIR}/proc"
+}
+
+function _chroot_run()
+{
+    chroot "${ROOTFS_DIR}" bash -c "${1}"
+}
+
+function _chroot_mount()
+{
+    trap '_chroot_unmount' EXIT
+    [[ $(ls "${ROOTFS_DIR}/dev"  | wc -l) -eq 0 ]] && mount --bind /dev   "${ROOTFS_DIR}/dev"
+    [[ $(ls "${ROOTFS_DIR}/sys"  | wc -l) -eq 0 ]] && mount --bind /sys   "${ROOTFS_DIR}/sys"
+    [[ $(ls "${ROOTFS_DIR}/proc" | wc -l) -eq 0 ]] && mount --bind /proc  "${ROOTFS_DIR}/proc"
+}
+
 function validate_requirements_rootfs_image_type_squashfs()
 {
     if ! command -v mksquashfs &>/dev/null; then
@@ -71,11 +91,6 @@ function check_is_validate_options()
     fi
     
     msg_info "完成!"
-}
-
-function _chroot_run()
-{
-    eval -- arch-chroot "${ROOTFS_DIR}" "${RUN_CMD}"
 }
 
 function _mount_rootfs()
@@ -278,12 +293,46 @@ function make_custom_rootfs()
     fi
 }
 
+function make_initramfs_config()
+{
+    [[ -f "${DIR_CONF}/initramfs/config/graceful-linux.conf" ]] \
+        && install -m 0644 "${DIR_CONF}/initramfs/config/graceful-linux.conf" \
+            "${ROOTFS_DIR}/etc/mkinitcpio.conf.d/"
+#    [[ -f "${ROOTFS_DIR}/etc/mkinitcpio.conf.d/graceful-linux.conf" ]] \
+#        && cd "${ROOTFS_DIR}/etc/mkinitcpio.conf.d" \
+#        && ln -sf graceful-linux.conf archiso.conf \
+#        && cd ${OLDPWD}
+    [[ -f "${DIR_CONF}/initramfs/hooks/build/graceful-linux-iso" ]] \
+        && install -m 0755 -d "${ROOTFS_DIR}/etc/initcpio/install/" \
+        && install -m 0755 "${DIR_CONF}/initramfs/hooks/build/graceful-linux-iso" "${ROOTFS_DIR}/etc/initcpio/install/"
+    [[ -f "${DIR_CONF}/initramfs/hooks/build/graceful-linux-iso_loop_mnt" ]] \
+        && install -m 0755 -d "${ROOTFS_DIR}/etc/initcpio/install/" \
+        && install -m 0755 "${DIR_CONF}/initramfs/hooks/build/graceful-linux-iso_loop_mnt" "${ROOTFS_DIR}/etc/initcpio/install/"
+
+    [[ -f "${DIR_CONF}/initramfs/hooks/runtime/graceful-linux-iso" ]] \
+        && install -m 0755 -d "${ROOTFS_DIR}/etc/initcpio/hooks/" \
+        && install -m 0755 "${DIR_CONF}/initramfs/hooks/runtime/graceful-linux-iso" "${ROOTFS_DIR}/etc/initcpio/hooks/"
+    [[ -f "${DIR_CONF}/initramfs/hooks/runtime/graceful-linux-iso_loop_mnt" ]] \
+        && install -m 0755 -d "${ROOTFS_DIR}/etc/initcpio/hooks/" \
+        && install -m 0755 "${DIR_CONF}/initramfs/hooks/runtime/graceful-linux-iso_loop_mnt" "${ROOTFS_DIR}/etc/initcpio/hooks/"
+}
+
 function make_packages()
 {
     if [[ -n "${GPG_KEY}" ]]; then
         exec {ISO_GNUPG_FD}<>"${WORK_DIR}/pubkey.gpg"
         export ISO_GNUPG_FD
     fi
+
+    # 安装基础包
+    _pacman "base"
+
+    [[ -f "${DIR_CONF}/rootfs/etc/locale.gen" ]]    && install -m 0744 "${DIR_CONF}/rootfs/etc/locale.gen"  "${ROOTFS_DIR}/etc"
+    [[ -f "${DIR_CONF}/rootfs/etc/locale.conf" ]]   && install -m 0744 "${DIR_CONF}/rootfs/etc/locale.conf" "${ROOTFS_DIR}/etc"
+
+    _chroot_mount
+    _chroot_run locale-gen
+    _chroot_unmount
 
     _pacman "${PKG_LIST[@]}"
     if [[ -n "${GPG_KEY}" ]]; then
@@ -322,27 +371,12 @@ function make_version()
 
 function make_customize_rootfs()
 {
-#    local passwd=()
-
-#    if [[ -e "${ROOTFS_DIR}/etc/passwd" ]]; then
-#        while IFS=':' read -a passwd -r; do
-#            (( passwd[2] >= 1000 && passwd[2] < 60000 )) || continue
-#            [[ "${passwd[5]}" == '/' ]] && continue
-#            [[ -z "${passwd[5]}" ]] && continue
-#            cp -dnRT --preserve=mode,timestamps,links -- "${ROOTFS_DIR}/etc/skel" "${ROOTFS_DIR}${passwd[5]}"
-#            chmod -f 0750 -- "${ROOTFS_DIR}${passwd[5]}"
-#            chown -hR -- "${passwd[2]}:${passwd[3]}" "${ROOTFS_DIR}${passwd[5]}"
-#        done < "${ROOTFS_DIR}/etc/passwd"
-#    fi
-   
-#    if [[ -e "${ROOTFS_DIR}/root/customize-gracefullinux.sh" ]]; then
-#        local RUN_CMD="/root/customize-gracefullinux.sh"
-#        chroot_run
-#        rm -- "${ROOTFS_DIR}/root/customize-gracefullinux.sh"
-#    fi
-
     # 将mkinitcpio相关内容复制到指定位置
     kernelName=$(ls ${ROOTFS_DIR}/usr/lib/modules/ | xargs | tr -d '\n')
+
+    _chroot_mount
+    _chroot_run "mkinitcpio -k ${kernelName} -z xz -g /boot/initramfs-${kernelName}.img"
+    _chroot_unmount
 }
 
 function make_pkg_list()
@@ -364,7 +398,7 @@ function make_common_grub_env_and_loopbackcfg()
 
     # Write grubenv
     printf '%.1024s' \
-        "$(printf '# GRUB Environment Block\nNAME=%s\nVERSION=%s\nARCHISO_LABEL=%s\nINSTALL_DIR=%s\nARCH=%s\nISO_SEARCH_FILENAME=%s\n%s' \
+        "$(printf '# GRUB Environment Block\nNAME=%s\nVERSION=%s\nISO_LABEL=%s\nINSTALL_DIR=%s\nARCH=%s\nISO_SEARCH_FILENAME=%s\n%s' \
             "${ISO_NAME}" \
             "${ISO_VERSION}" \
             "${ISO_LABEL}" \

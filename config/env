@@ -2,6 +2,7 @@
 
 # 配置环境
 export LANG="C"
+export LC_ALL="zh_CN.utf8"
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-"$(date +%s)"}"
 
 
@@ -46,7 +47,6 @@ ISO_UUID=$(TZ='UTC' date --date="@$SOURCE_DATE_EPOCH" +"%F-%H-%M-%S-00")
 
 # 镜像中的软件包
 PKG_LIST=(
-base                        # 文件系统          必须
 linux                       # 内核              必须
 syslinux                    # ISO 引导需要      必须
 mkinitcpio                  # 制作 initramfs    必须

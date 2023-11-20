@@ -16,12 +16,32 @@ export HOOKDIR=${workDir}/config/initramfs/hooks
 
 #-A "${hooks[@]}" \
 #-D "${workDir}/config/initramfs/hooks" \
-mkinitcpio \
-    -r ${workDir}/work/rootfs/ \
-    -c ${workDir}/config/initramfs/config/graceful-linux.conf \
+#mkinitcpio \
+#    -r ${workDir}/work/rootfs/ \
+#    -c ${workDir}/config/initramfs/config/graceful-linux.conf \
+#    -k 6.6.1-arch1-1 \
+#    -z xz \
+#    -g ${curDir}/initramfs.img
+
+mount --bind /dev   ${workDir}/work/rootfs/dev
+mount --bind /sys   ${workDir}/work/rootfs/sys
+mount --bind /proc  ${workDir}/work/rootfs/proc
+
+cp /etc/locale.conf ${workDir}/work/rootfs/etc/
+cp /etc/locale.gen  ${workDir}/work/rootfs/etc/
+
+chroot ${workDir}/work/rootfs locale-gen 
+
+chroot ${workDir}/work/rootfs \
+    mkinitcpio \
     -k 6.6.1-arch1-1 \
     -z xz \
-    -g ${curDir}/initramfs.img
+    -g /boot/initramfs.img
+
+umount ${workDir}/work/rootfs/dev
+umount ${workDir}/work/rootfs/sys
+umount ${workDir}/work/rootfs/proc
+
 
 exit 0
 rm -rf ${curDir}/tmp
