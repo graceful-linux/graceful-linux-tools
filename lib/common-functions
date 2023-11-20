@@ -298,10 +298,6 @@ function make_initramfs_config()
     [[ -f "${DIR_CONF}/initramfs/config/graceful-linux.conf" ]] \
         && install -m 0644 "${DIR_CONF}/initramfs/config/graceful-linux.conf" \
             "${ROOTFS_DIR}/etc/mkinitcpio.conf.d/"
-#    [[ -f "${ROOTFS_DIR}/etc/mkinitcpio.conf.d/graceful-linux.conf" ]] \
-#        && cd "${ROOTFS_DIR}/etc/mkinitcpio.conf.d" \
-#        && ln -sf graceful-linux.conf archiso.conf \
-#        && cd ${OLDPWD}
     [[ -f "${DIR_CONF}/initramfs/hooks/build/graceful-linux-iso" ]] \
         && install -m 0755 -d "${ROOTFS_DIR}/etc/initcpio/install/" \
         && install -m 0755 "${DIR_CONF}/initramfs/hooks/build/graceful-linux-iso" "${ROOTFS_DIR}/etc/initcpio/install/"
@@ -377,6 +373,7 @@ function make_customize_rootfs()
     _chroot_mount
     _chroot_run "mkinitcpio -k ${kernelName} -z xz -g /boot/initramfs-${kernelName}.img"
     _chroot_unmount
+    chmod 0755 "${ROOTFS_DIR}/boot/initramfs-*.img"
 }
 
 function make_pkg_list()
