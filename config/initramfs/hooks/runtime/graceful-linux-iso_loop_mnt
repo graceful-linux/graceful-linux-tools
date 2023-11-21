@@ -30,7 +30,7 @@ iso_loop_mount_handler()
     if _dev_loop=$(losetup --find --show --read-only "/run/iso/img_dev/${img_loop}"); then
         export isodevice="${_dev_loop}"
     else
-        echo "ERROR: Setting loopback device for file '/run/archiso/img_dev/${img_loop}'"
+        echo "ERROR: Setting loopback device for file '/run/iso/img_dev/${img_loop}'"
         launch_interactive_shell
     fi
 

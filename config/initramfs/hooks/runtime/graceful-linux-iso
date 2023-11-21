@@ -50,9 +50,9 @@ _mnt_overlayfs() {
     local src="${1}"
     local newroot="${2}"
     local mnt="${3}"
-    mkdir -p "/run/archiso/cowspace/${cow_directory}/upperdir" "/run/archiso/cowspace/${cow_directory}/workdir"
+    mkdir -p "/run/iso/cowspace/${cow_directory}/upperdir" "/run/iso/cowspace/${cow_directory}/workdir"
     mount -t overlay -o \
-        "lowerdir=${src},upperdir=/run/archiso/cowspace/${cow_directory}/upperdir,workdir=/run/archiso/cowspace/${cow_directory}/workdir" \
+        "lowerdir=${src},upperdir=/run/iso/cowspace/${cow_directory}/upperdir,workdir=/run/iso/cowspace/${cow_directory}/workdir" \
         airootfs "${newroot}${mnt}"
 }
 

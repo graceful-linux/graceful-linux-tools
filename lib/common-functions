@@ -373,7 +373,8 @@ function make_customize_rootfs()
     _chroot_mount
     _chroot_run "mkinitcpio -k ${kernelName} -z xz -g /boot/initramfs-${kernelName}.img"
     _chroot_unmount
-    chmod 0755 "${ROOTFS_DIR}/boot/initramfs-*.img"
+    chmod 0755 "${ROOTFS_DIR}/boot/initramfs-${kernelName}.img"
+    mv "${ROOTFS_DIR}/boot/initramfs-${kernelName}.img" "${ROOTFS_DIR}/boot/initramfs-linux.img"
 }
 
 function make_pkg_list()
