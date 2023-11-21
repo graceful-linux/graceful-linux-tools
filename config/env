@@ -52,5 +52,7 @@ syslinux                    # ISO 引导需要      必须
 mkinitcpio                  # 制作 initramfs    必须
 intel-ucode                 # intel x86         必须
 amd-ucode                   # amd x86           必须
-gnome                       # gnome 图形包      可选
+vim                         # vim 编辑器        可选
+sudo                        # 提权用到          可选
+#gnome                       # gnome 图形包      可选
 )

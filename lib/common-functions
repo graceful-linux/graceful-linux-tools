@@ -335,10 +335,12 @@ function make_packages()
         exec {ISO_GNUPG_FD}<&-
         unset ISO_GNUPG_FD
     fi
+    msg_info "OK!"
 }
 
 function make_version()
 {
+    msg_info "make_version"
     rm -f -- "${ROOTFS_DIR}/version"
     printf '%s\n' "${ISO_VERSION}" > "${ROOTFS_DIR}/version"
 
@@ -360,27 +362,28 @@ function make_version()
         printf 'IMAGE_ID=%s\nIMAGE_VERSION=%s\n' "${ISO_NAME}" "${ISO_VERSION}" >>"${osRelease}"
     fi
 
-    if [[ "${ROOTFS_DIR}/etc/os-release" ]]; then
+    if [[ -f "${ROOTFS_DIR}/etc/os-release" ]]; then
         sed 's|^NAME="[^"]*"|NAME=\"Graceful Linux\"|;
              s|^PRETTY_NAME="[^"]*"|PRETTY_NAME=\"Graceful Linux\"|;
              s|^ID=[^*]*|ID=graceful-linux|;
              s|^HOME_URL="[^"]*"|HOME_URL="https:\/\/github.com\/graceful-linux"|;
-             s|^DOCUMENTATION_URL="[^"]*"|DOCUMENTATION_URL="https:\/\/dingjingmaster-docs\.readthedocs\.io\/en\/latest\/index\.html"|'
+             s|^DOCUMENTATION_URL="[^"]*"|DOCUMENTATION_URL="https:\/\/dingjingmaster-docs\.readthedocs\.io\/en\/latest\/index\.html"|' \
              "${ROOTFS_DIR}/etc/os-release" > "${ROOTFS_DIR}/etc/os-release"
     fi
 
-    if [[ "${ROOTFS_DIR}/usr/lib/os-release" ]]; then
+    if [[ -f "${ROOTFS_DIR}/usr/lib/os-release" ]]; then
         sed 's|^NAME="[^"]*"|NAME=\"Graceful Linux\"|;
              s|^PRETTY_NAME="[^"]*"|PRETTY_NAME=\"Graceful Linux\"|;
              s|^ID=[^*]*|ID=graceful-linux|;
              s|^HOME_URL="[^"]*"|HOME_URL="https:\/\/github.com\/graceful-linux"|;
-             s|^DOCUMENTATION_URL="[^"]*"|DOCUMENTATION_URL="https:\/\/dingjingmaster-docs\.readthedocs\.io\/en\/latest\/index\.html"|'
+             s|^DOCUMENTATION_URL="[^"]*"|DOCUMENTATION_URL="https:\/\/dingjingmaster-docs\.readthedocs\.io\/en\/latest\/index\.html"|' \
              "${ROOTFS_DIR}/usr/lib/os-release" > "${ROOTFS_DIR}/usr/lib/os-release"
     fi
 
     # Touch /usr/lib/clock-epoch to give another hint on date and time
     # for systems with screwed or broken RTC.
     touch -m -d"@${SOURCE_DATE_EPOCH}" -- "${ROOTFS_DIR}/usr/lib/clock-epoch"
+    msg_info "OK"
 }
 
 function make_customize_rootfs()
@@ -399,6 +402,34 @@ function make_pkg_list()
 {
     install -d -m 0755 -- "${ISO_DIR}/${APP_NAME}"
     pacman -Q --sysroot ${ROOTFS_DIR} > ${ISO_DIR}/${APP_NAME}/pkglist.${ARCH}.txt
+}
+
+function make_user_passwd()
+{
+    password="GracefulLinux"
+    _chroot_mount
+    _chroot_run "useradd -m -r -u 1000 -U GracefulLinux"
+    _chroot_run "echo -e \"${password}\n${password}\" | passwd root -q"
+    _chroot_run "echo -e \"${password}\n${password}\" | passwd GracefulLinux -q"
+    _chroot_run "ln -sf /usr/lib/systemd/system/multi-user.target /usr/lib/systemd/system/default.target"
+    _chroot_unmount
+
+    if [[ -f "${DIR_CONF}/rootfs/etc/motd" ]]; then
+        sed "s|%PASSWD%|${password}|g;" \
+             "${DIR_CONF}/rootfs/etc/motd" > "${ROOTFS_DIR}/etc/motd"
+    fi 
+
+    if [[ -f "${DIR_CONF}/rootfs/etc/systemd/system/getty@tty1.service.d/autologin.conf" ]]; then
+        sed "s|%PASSWD%|${password}|g;" \
+             "${DIR_CONF}/rootfs/etc/systemd/system/getty@tty1.service.d/autologin.conf" \
+             > "${ROOTFS_DIR}/etc/systemd/system/getty@tty1.service.d/autologin.conf"
+    fi 
+
+    # 将 GracefulLinux 用户添加到 sudoers 组中，注意添加的文件权限严格是 0440
+    if [[ ! -f "${ROOTFS_DIR}/etc/sudoers.d/GracefulLinux" ]]; then
+        echo 'GracefulLinux ALL=(ALL:ALL) ALL' > "${ROOTFS_DIR}/etc/sudoers.d/GracefulLinux"
+        chmod 0440 "${ROOTFS_DIR}/etc/sudoers.d/GracefulLinux"
+    fi
 }
 
 function make_common_grub_env_and_loopbackcfg() 
@@ -502,7 +533,7 @@ function make_cleanup()
 
 function make_prepare()
 {
-    if ! typeset -f "make_rootfs_${ROOTFS_IMAGE_TYPE}" &>/dev/null; then
+    if ! typeset -f "make_rootfs_${ROOTFS_IMAGE_TYPE}" &>/dev/null 2>&1; then
         msg_error "不支持的镜像类型: '${ROOTFS_IMAGE_TYPE}'" 1
     fi
 

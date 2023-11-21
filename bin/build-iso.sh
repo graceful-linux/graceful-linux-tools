@@ -25,7 +25,8 @@ run_once make_initramfs_config              #
 run_once make_packages                      # 将安装包安装到根文件系统
 run_once make_version                       # 添加版本信息
 run_once make_customize_rootfs              # 定制根文件系统
-run_once make_pkg_list                      # 
+run_once make_pkg_list                      # 列出rootfs中安装的软件包
+make_user_passwd                            # 设置用户密码
 make_boot_modes                             #
 run_once make_cleanup                       # 
 run_once make_prepare
