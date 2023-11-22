@@ -408,10 +408,12 @@ function make_user_passwd()
 {
     password="GracefulLinux"
     _chroot_mount
+    set +e
     _chroot_run "useradd -m -r -u 1000 -U GracefulLinux"
     _chroot_run "echo -e \"${password}\n${password}\" | passwd root -q"
     _chroot_run "echo -e \"${password}\n${password}\" | passwd GracefulLinux -q"
     _chroot_run "ln -sf /usr/lib/systemd/system/multi-user.target /usr/lib/systemd/system/default.target"
+    set -e
     _chroot_unmount
 
     if [[ -f "${DIR_CONF}/rootfs/etc/motd" ]]; then
@@ -429,6 +431,18 @@ function make_user_passwd()
     if [[ ! -f "${ROOTFS_DIR}/etc/sudoers.d/GracefulLinux" ]]; then
         echo 'GracefulLinux ALL=(ALL:ALL) ALL' > "${ROOTFS_DIR}/etc/sudoers.d/GracefulLinux"
         chmod 0440 "${ROOTFS_DIR}/etc/sudoers.d/GracefulLinux"
+    fi
+
+    # 配置 root 自动登录
+    if [[ -f "${DIR_CONF}/others/autologin.sh" ]]; then
+        sed "s|%PASSWD%|${password}|g;" \
+             "${DIR_CONF}/others/autologin.sh" > "${ROOTFS_DIR}/usr/bin/autologin.sh"
+        chmod a+x "${ROOTFS_DIR}/usr/bin/autologin.sh"
+        if [[ -f "${ROOTFS_DIR}/usr/lib/systemd/system/getty@.service" ]]; then
+            sed -E "s|^ExecStart=-.*|ExecStart=-/sbin/agetty -a root --noclear %I \$TERM|g;" \
+                "${DIR_CONF}/others/getty@.service" \
+                > "${ROOTFS_DIR}/usr/lib/systemd/system/getty@.service"
+        fi
     fi
 }
 
